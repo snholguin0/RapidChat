@@ -1,0 +1,15 @@
+{
+  "name": "rapidchat",
+  "version": "1.0.0",
+  "description": "A real-time chat room website.",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "node backend/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.17.1"
+  },
+  "author": "Selena",
+  "license": "ISC"
+}

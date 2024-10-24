@@ -1,30 +1,24 @@
 const express = require('express');
-const bodyParser = require('body-parser');
-const bcrypt = require('bcryptjs');
+const path = require('path');
+const bcrypt = require('bcryptjs'); // assuming this will be used for user authentication
 const app = express();
-app.use(bodyParser.json());
+const PORT = 3000;
 
-let users = [];
+// Serve static files from the frontend folder
+app.use(express.static(path.join(__dirname, '../frontend')));
 
-// Register route
-app.post('/register', (req, res) => {
-    const { username, password } = req.body;
-    const hashedPassword = bcrypt.hashSync(password, 8);
-    users.push({ username, password: hashedPassword });
-    res.json({ message: "User registered successfully" });
+// Route to serve the index.html file
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-// Login route
+// Example endpoint for user authentication
 app.post('/login', (req, res) => {
-    const { username, password } = req.body;
-    const user = users.find(u => u.username === username);
-    if (user && bcrypt.compareSync(password, user.password)) {
-        res.json({ message: "Login successful" });
-    } else {
-        res.status(400).json({ message: "Invalid credentials" });
-    }
+    // Your authentication logic here
+    res.send('Login endpoint');
 });
 
-app.listen(3000, () => {
-    console.log('Server is running on port 3000');
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
