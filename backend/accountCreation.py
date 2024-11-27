@@ -81,4 +81,4 @@ def list_all_users():
 def close_connection():
     """Close the database connection."""
     conn.close()
-
+    
