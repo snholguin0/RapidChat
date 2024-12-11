@@ -40,6 +40,6 @@ io.on('connection', (socket) => {
 
 // Start the server
 const PORT = 3000; // You can change this to your desired port
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://localhost:${PORT}`);
 });
