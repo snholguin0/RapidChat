@@ -1,12 +1,12 @@
 import sqlite3
 import hashlib
 
-# Global database connection
-conn = sqlite3.connect("chat_website.db")
+
+conn = sqlite3.connect("RapidChat.db")
 cursor = conn.cursor()
 
-# Create the users table if it doesn't exist
-def initialize_database():
+#This method is in charge of initializing the database this uses SQL
+def initializeDatabase():
     """Initialize the database and create the users table if it doesn't exist."""
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -18,15 +18,15 @@ def initialize_database():
     """)
     conn.commit()
 
-# Hash a password
-def hash_password(password):
+#This method is in charge of password hashing 
+def hashPassword(password):
     """Hash a password using SHA-256."""
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Create a new user account
-def create_account(username, email, password):
+#This method is in charge of account creation after the users enters their details it will run the password hash and then put the account into the database
+def createAccount(username, email, password):
     """Create a new user account."""
-    password_hash = hash_password(password)
+    password_hash = hashPassword(password)
     try:
         cursor.execute("INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)", 
                        (username, email, password_hash))
@@ -35,8 +35,8 @@ def create_account(username, email, password):
     except sqlite3.IntegrityError:
         print("Error: Username or email already exists.")
 
-# Delete a user account
-def delete_account(username):
+#This method is for deleting accounts from the database 
+def deleteAccount(username):
     """Delete a user account by username."""
     cursor.execute("DELETE FROM users WHERE username = ?", (username,))
     conn.commit()
@@ -45,40 +45,20 @@ def delete_account(username):
     else:
         print(f"Account '{username}' not found.")
 
-# Verify login credentials
-def verify_login(username, password):
+#This account is used to verify login information if a user is in the database login will be successful if they are not in the database it will say invalid username or password
+def verifyLogin(username, password):
     """Verify login credentials."""
     cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
-    if user and user[0] == hash_password(password):
+    if user and user[0] == hashPassword(password):
         print("Login successful!")
         return True
     else:
         print("Invalid username or password.")
         return False
 
-# Retrieve user details by username
-def get_user_by_username(username):
-    """Retrieve user details by username."""
-    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-    user = cursor.fetchone()
-    if user:
-        print(f"User found: {user}")
-        return user
-    else:
-        print("User not found.")
-        return None
-
-# List all users
-def list_all_users():
-    """List all users in the database."""
-    cursor.execute("SELECT id, username, email FROM users")
-    users = cursor.fetchall()
-    for user in users:
-        print(user)
-
-# Close the database connection
-def close_connection():
+#Closes the database connection 
+def closeConnection():
     """Close the database connection."""
     conn.close()
     
