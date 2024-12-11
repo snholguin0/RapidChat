@@ -1,24 +1,45 @@
 const express = require('express');
-const path = require('path');
-const bcrypt = require('bcryptjs'); // assuming this will be used for user authentication
+const http = require('http');
+const { Server } = require('socket.io');
+
+// Initialize the app and create a server
 const app = express();
-const PORT = 3000;
+const server = http.createServer(app);
+const io = new Server(server);
 
-// Serve static files from the frontend folder
-app.use(express.static(path.join(__dirname, '../frontend')));
+// Serve static files from the 'frontend' folder
+app.use(express.static('../frontend'));
 
-// Route to serve the index.html file
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../frontend/index.html'));
-});
 
-// Example endpoint for user authentication
-app.post('/login', (req, res) => {
-    // Your authentication logic here
-    res.send('Login endpoint');
+// WebSocket logic
+io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
+
+    // Event for joining a room
+    socket.on('joinRoom', (room) => {
+        socket.join(room); // Add the user to the specified room
+        console.log(`${socket.id} joined room: ${room}`);
+
+        // Notify others in the room that a new user has joined
+        socket.to(room).emit('message', `A new user has joined room: ${room}`);
+    });
+
+    // Event for receiving and broadcasting chat messages
+    socket.on('chatMessage', ({ room, message, username }) => {
+        console.log(`Message from ${username || 'User'} in ${room}: ${message}`);
+
+        // Broadcast the message to everyone in the room
+        io.to(room).emit('message', `${username || 'User'}: ${message}`);
+    });
+
+    // Event for handling user disconnection
+    socket.on('disconnect', () => {
+        console.log('A user disconnected:', socket.id);
+    });
 });
 
 // Start the server
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+const PORT = 3000; // You can change this to your desired port
+server.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
 });
