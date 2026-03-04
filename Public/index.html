@@ -1,81 +1,77 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <title>Rapid Chat</title>
-    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RapidChat</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <div id="auth-container" class="container mt-5">
-        <h1 class="text-center mb-4">Welcome to Rapid Chat!</h1>
-        <form id="signup-form" class="mb-3">
-            <h3>Sign Up</h3>
-            <input type="text" id="signup-username" class="form-control" placeholder="Username" required>
-            <input type="password" id="signup-password" class="form-control mt-2" placeholder="Password" required>
-            <button class="btn btn-primary mt-3">Sign Up</button>
-        </form>
-        <form id="login-form">
-            <h3>Login</h3>
-            <input type="text" id="login-username" class="form-control" placeholder="Username" required>
-            <input type="password" id="login-password" class="form-control mt-2" placeholder="Password" required>
-            <button class="btn btn-success mt-3">Login</button>
-        </form>
+  <div class="wrap">
+    <h1>RapidChat</h1>
+
+    <div id="authView" class="card">
+      <div class="grid2">
+        <div>
+          <h2>Sign Up</h2>
+          <form id="signupForm">
+            <input id="suUser" placeholder="username" autocomplete="username" />
+            <input id="suPass" placeholder="password" type="password" autocomplete="new-password" />
+            <button type="submit">Sign Up</button>
+          </form>
+          <p id="signupMsg" class="msg"></p>
+        </div>
+
+        <div>
+          <h2>Login</h2>
+          <form id="loginForm">
+            <input id="liUser" placeholder="username" autocomplete="username" />
+            <input id="liPass" placeholder="password" type="password" autocomplete="current-password" />
+            <button type="submit">Login</button>
+          </form>
+          <p id="loginMsg" class="msg"></p>
+        </div>
+      </div>
     </div>
 
-    <div id="dashboard" class="container mt-5" style="display: none;">
-        <h1 class="text-center mb-4">Welcome to Rapid Chat!</h1>
+    <div id="chatView" class="card hidden">
+      <div class="topbar">
+        <div>
+          <div class="small">Logged in as</div>
+          <div id="who" class="who"></div>
+        </div>
+        <button id="logoutBtn" class="secondary">Logout</button>
+      </div>
 
-        <div class="row">
-            <div class="col-md-4">
-                <h3>Friend Requests</h3>
-                <ul id="friend-requests" class="list-group"></ul>
-            </div>
-            <div class="col-md-4">
-                <h3>Add Friends</h3>
-                <form id="add-friend-form">
-                    <div class="input-group mb-3">
-                        <input type="text" id="friend-username" class="form-control" placeholder="Friend's Username" required>
-                        <button class="btn btn-primary" type="submit">Send Friend Request</button>
-                    </div>
-                </form>
-            </div>
-            <div class="col-md-4">
-                <h3>Your Friends</h3>
-                <ul id="friends-list" class="list-group"></ul>
-            </div>
+      <div class="gridChat">
+        <div class="panel">
+          <h3>Room</h3>
+          <div class="row">
+            <input id="roomInput" placeholder="room name" />
+            <button id="joinBtn">Join</button>
+            <button id="leaveBtn" class="secondary">Leave</button>
+          </div>
+
+          <h3>Members</h3>
+          <ul id="members" class="list"></ul>
         </div>
 
-        <hr class="my-5">
+        <div class="chat">
+          <div id="roomTitle" class="roomTitle">No room joined</div>
+          <div id="messages" class="messages"></div>
 
-        <div class="row">
-            <div class="col-md-6">
-                <h3>Chat Rooms</h3>
-                <ul id="chat-rooms-list" class="list-group mb-3"></ul>
-                <form id="create-chat-form">
-                    <div class="input-group">
-                        <input type="text" id="chat-room-name" class="form-control" placeholder="Chat Room Name" required>
-                        <button class="btn btn-success" type="submit">Create Chat Room</button>
-                    </div>
-                </form>
-            </div>
+          <form id="msgForm" class="row">
+            <input id="msgInput" placeholder="type a message" />
+            <button type="submit">Send</button>
+          </form>
 
-            <div class="col-md-6">
-                <h3>Messages</h3>
-                <div id="messages" class="border p-3 bg-light" style="height: 300px; overflow-y: auto;"></div>
-                <div class="input-group mt-3">
-                    <input type="text" id="message-input" class="form-control" placeholder="Type a message..." required>
-                    <button id="send-message" class="btn btn-primary" type="button">Send</button>
-                </div>
-            </div>
+          <p id="chatMsg" class="msg"></p>
         </div>
-
-        <div class="text-center mt-4">
-            <button id="logout-button" class="btn btn-danger">Log Out</button>
-        </div>
+      </div>
     </div>
+  </div>
 
-    <script src="app.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

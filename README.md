@@ -1,1 +1,0 @@
-RapidChat is a new communication website. Its primary purpose is to provide users with an easy-to-use chatting experience and a simple interface. Users will not only be able to chat with one another but also share files.

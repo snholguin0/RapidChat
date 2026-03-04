@@ -1,231 +1,232 @@
-const ngrokURL = 'https://bad3-2601-541-b81-96f0-d418-d650-4370-7207.ngrok-free.app'; // Replace with your Ngrok URL
-const socket = io(ngrokURL);
+let token = localStorage.getItem("rapidchat_token") || "";
+let username = localStorage.getItem("rapidchat_user") || "";
+let socket = null;
+let currentRoom = "";
 
-let currentUser = null;
-let currentRoom = null; // Track the current room
+const authView = document.getElementById("authView");
+const chatView = document.getElementById("chatView");
 
-// DOM Elements
-const signupForm = document.getElementById('signup-form');
-const loginForm = document.getElementById('login-form');
-const authContainer = document.getElementById('auth-container');
-const dashboard = document.getElementById('dashboard');
-const friendRequestsContainer = document.getElementById('friend-requests');
-const friendsListContainer = document.getElementById('friends-list');
-const addFriendForm = document.getElementById('add-friend-form');
-const createChatForm = document.getElementById('create-chat-form');
-const chatRoomsList = document.getElementById('chat-rooms-list');
-const messagesContainer = document.getElementById('messages');
-const messageInput = document.getElementById('message-input');
+const signupForm = document.getElementById("signupForm");
+const loginForm = document.getElementById("loginForm");
+const signupMsg = document.getElementById("signupMsg");
+const loginMsg = document.getElementById("loginMsg");
 
-// Signup
-signupForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('signup-username').value;
-    const password = document.getElementById('signup-password').value;
+const who = document.getElementById("who");
+const logoutBtn = document.getElementById("logoutBtn");
 
-    const response = await fetch(`${ngrokURL}/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
+const roomInput = document.getElementById("roomInput");
+const joinBtn = document.getElementById("joinBtn");
+const leaveBtn = document.getElementById("leaveBtn");
+
+const roomTitle = document.getElementById("roomTitle");
+const members = document.getElementById("members");
+
+const messages = document.getElementById("messages");
+const msgForm = document.getElementById("msgForm");
+const msgInput = document.getElementById("msgInput");
+const chatMsg = document.getElementById("chatMsg");
+
+function showAuth() {
+  authView.classList.remove("hidden");
+  chatView.classList.add("hidden");
+}
+
+function showChat() {
+  authView.classList.add("hidden");
+  chatView.classList.remove("hidden");
+  who.textContent = username || "";
+}
+
+function setMsg(el, text) {
+  el.textContent = text || "";
+}
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function addMessage({ kind, from, text, ts }) {
+  const div = document.createElement("div");
+  div.className = "bubble " + (kind === "system" ? "system" : "");
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = kind === "system"
+    ? `${fmtTime(ts)} System`
+    : `${fmtTime(ts)} ${from}`;
+
+  const body = document.createElement("div");
+  body.className = "text";
+  body.textContent = text;
+
+  div.appendChild(meta);
+  div.appendChild(body);
+  messages.appendChild(div);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function clearChat() {
+  messages.innerHTML = "";
+  members.innerHTML = "";
+  roomTitle.textContent = "No room joined";
+  currentRoom = "";
+}
+
+async function api(path, opts = {}) {
+  const headers = opts.headers || {};
+  if (token) headers["x-session-token"] = token;
+  if (opts.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+
+  const res = await fetch(path, { ...opts, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+function connectSocket() {
+  socket = io({ auth: { token } });
+
+  socket.on("connect", () => setMsg(chatMsg, ""));
+
+  socket.on("connect_error", (err) => {
+    setMsg(chatMsg, "Socket error: " + err.message);
+  });
+
+  socket.on("systemMessage", (m) => {
+    if (m.roomName !== currentRoom) return;
+    addMessage({ kind: "system", text: m.text, ts: m.ts });
+  });
+
+  socket.on("chatMessage", (m) => {
+    if (m.roomName !== currentRoom) return;
+    addMessage({ kind: "chat", from: m.from, text: m.text, ts: m.ts });
+  });
+
+  socket.on("roomMembers", (m) => {
+    if (m.roomName !== currentRoom) return;
+    members.innerHTML = "";
+    m.members.forEach((name) => {
+      const li = document.createElement("li");
+      li.textContent = name;
+      members.appendChild(li);
+    });
+  });
+}
+
+function joinRoom(name) {
+  if (!name) return setMsg(chatMsg, "Enter a room name");
+  if (currentRoom) socket.emit("leaveRoom", { roomName: currentRoom });
+
+  currentRoom = name;
+  roomTitle.textContent = "Room: " + currentRoom;
+  messages.innerHTML = "";
+
+  socket.emit("joinRoom", { roomName: currentRoom });
+  setMsg(chatMsg, "");
+}
+
+function leaveRoom() {
+  if (!currentRoom) return;
+  socket.emit("leaveRoom", { roomName: currentRoom });
+  clearChat();
+}
+
+signupForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  setMsg(signupMsg, "");
+
+  const u = document.getElementById("suUser").value.trim();
+  const p = document.getElementById("suPass").value;
+
+  if (!u || !p) return setMsg(signupMsg, "Enter username and password");
+
+  try {
+    await api("/api/signup", {
+      method: "POST",
+      body: JSON.stringify({ username: u, password: p })
+    });
+    setMsg(signupMsg, "Account created. Now login.");
+  } catch (err) {
+    setMsg(signupMsg, err.message);
+  }
+});
+
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  setMsg(loginMsg, "");
+
+  const u = document.getElementById("liUser").value.trim();
+  const p = document.getElementById("liPass").value;
+
+  if (!u || !p) return setMsg(loginMsg, "Enter username and password");
+
+  try {
+    const data = await api("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ username: u, password: p })
     });
 
-    if (response.ok) {
-        alert('Sign-up successful! Please log in.');
-    } else {
-        alert('Sign-up failed. Please try again.');
-    }
+    token = data.token;
+    username = data.username;
+
+    localStorage.setItem("rapidchat_token", token);
+    localStorage.setItem("rapidchat_user", username);
+
+    showChat();
+    connectSocket();
+  } catch (err) {
+    setMsg(loginMsg, err.message);
+  }
 });
 
-// Login
-loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('login-username').value;
-    const password = document.getElementById('login-password').value;
+logoutBtn.addEventListener("click", async () => {
+  try {
+    await api("/api/logout", { method: "POST" });
+  } catch {}
 
-    const response = await fetch(`${ngrokURL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-    });
+  if (socket) socket.disconnect();
+  socket = null;
 
-    if (response.ok) {
-        currentUser = username;
-        alert(`Welcome, ${username}!`);
-        showDashboard();
-        fetchFriendRequests();
-        fetchFriends();
-        fetchChatRooms();
-    } else {
-        alert('Login failed. Please try again.');
-    }
+  token = "";
+  username = "";
+  localStorage.removeItem("rapidchat_token");
+  localStorage.removeItem("rapidchat_user");
+
+  clearChat();
+  showAuth();
 });
 
-// Show Dashboard
-function showDashboard() {
-    authContainer.style.display = 'none';
-    dashboard.style.display = 'block';
-}
+joinBtn.addEventListener("click", () => joinRoom(roomInput.value.trim()));
+leaveBtn.addEventListener("click", () => leaveRoom());
 
-// Fetch Friend Requests
-async function fetchFriendRequests() {
-    const response = await fetch(`${ngrokURL}/friend-requests/${currentUser}`);
-    if (response.ok) {
-        const data = await response.json();
-        friendRequestsContainer.innerHTML = '';
-        data.friendRequests.forEach((req) => {
-            const li = document.createElement('li');
-            li.textContent = req;
+msgForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!socket) return setMsg(chatMsg, "Not connected");
+  if (!currentRoom) return setMsg(chatMsg, "Join a room first");
 
-            const acceptButton = document.createElement('button');
-            acceptButton.textContent = 'Accept';
-            acceptButton.addEventListener('click', () => acceptFriendRequest(req));
+  const text = msgInput.value.trim();
+  if (!text) return;
 
-            li.appendChild(acceptButton);
-            friendRequestsContainer.appendChild(li);
-        });
-    }
-}
-
-// Accept Friend Request
-async function acceptFriendRequest(friendUsername) {
-    const response = await fetch(`${ngrokURL}/accept-friend-request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: currentUser, friendUsername }),
-    });
-
-    if (response.ok) {
-        alert('Friend request accepted!');
-        fetchFriendRequests();
-        fetchFriends();
-    } else {
-        alert('Failed to accept friend request.');
-    }
-}
-
-// Fetch Friends List
-async function fetchFriends() {
-    const response = await fetch(`${ngrokURL}/friends/${currentUser}`);
-    if (response.ok) {
-        const data = await response.json();
-        friendsListContainer.innerHTML = '';
-        data.friends.forEach((friend) => {
-            const li = document.createElement('li');
-            li.textContent = friend;
-            friendsListContainer.appendChild(li);
-        });
-    }
-}
-
-// Add Friend
-addFriendForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const friendUsername = document.getElementById('friend-username').value;
-
-    const response = await fetch(`${ngrokURL}/send-friend-request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: currentUser, friendUsername }),
-    });
-
-    if (response.ok) {
-        alert(`Friend request sent to ${friendUsername}!`);
-    } else {
-        const error = await response.json();
-        alert(`Failed to send friend request: ${error.error}`);
-    }
+  socket.emit("sendMessage", { roomName: currentRoom, text });
+  msgInput.value = "";
 });
 
-// Create Chat Room
-createChatForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const roomName = document.getElementById('chat-room-name').value;
+// Boot
+(async function boot() {
+  if (!token) return showAuth();
 
-    const response = await fetch(`${ngrokURL}/create-chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: roomName, creator: currentUser }),
-    });
+  try {
+    const me = await api("/api/me");
+    username = me.username;
+    localStorage.setItem("rapidchat_user", username);
 
-    if (response.ok) {
-        alert(`Chat room "${roomName}" created!`);
-        fetchChatRooms();
-    } else {
-        alert('Failed to create chat room.');
-    }
-});
-
-// Fetch Chat Rooms
-async function fetchChatRooms() {
-    const response = await fetch(`${ngrokURL}/chat-rooms`);
-    if (response.ok) {
-        const data = await response.json();
-        chatRoomsList.innerHTML = ''; // Clear previous rooms
-        data.chatRooms.forEach((room) => {
-            const li = document.createElement('li');
-            li.textContent = room.name;
-
-            const joinButton = document.createElement('button');
-            joinButton.textContent = currentRoom === room.name ? 'Leave' : 'Join';
-            joinButton.className = currentRoom === room.name ? 'btn btn-danger' : 'btn btn-success';
-            joinButton.addEventListener('click', () => toggleRoom(room.name, joinButton));
-
-            li.appendChild(joinButton);
-            chatRoomsList.appendChild(li);
-        });
-    } else {
-        alert('Failed to fetch chat rooms.');
-    }
-}
-
-// Toggle Room (Join/Leave)
-function toggleRoom(roomName, button) {
-    if (currentRoom === roomName) {
-        socket.emit('leaveRoom', roomName);
-        currentRoom = null;
-        button.textContent = 'Join';
-        button.className = 'btn btn-success'; // Green for Join
-    } else {
-        socket.emit('joinRoom', roomName);
-        currentRoom = roomName;
-        button.textContent = 'Leave';
-        button.className = 'btn btn-danger'; // Red for Leave
-        fetchMessages(roomName);
-    }
-}
-
-// Fetch Messages
-async function fetchMessages(roomName) {
-    const response = await fetch(`${ngrokURL}/chat-rooms/${roomName}/messages`);
-    if (response.ok) {
-        const data = await response.json();
-        messagesContainer.innerHTML = ''; // Clear previous messages
-        data.messages.forEach((message) => {
-            displayMessage(message);
-        });
-    } else {
-        alert('Failed to fetch messages.');
-    }
-}
-
-// Send Message
-messageInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter' && currentRoom) {
-        const message = messageInput.value.trim();
-        if (!message) return;
-
-        socket.emit('sendMessage', { roomName: currentRoom, sender: currentUser, content: message });
-        messageInput.value = ''; // Clear input
-    }
-});
-
-// Display Real-Time Messages
-socket.on('newMessage', (message) => {
-    displayMessage(message);
-});
-
-function displayMessage(message) {
-    const p = document.createElement('p');
-    p.innerHTML = `<strong>${message.sender}:</strong> ${message.content}`;
-    messagesContainer.appendChild(p);
-}
+    showChat();
+    connectSocket();
+  } catch {
+    token = "";
+    localStorage.removeItem("rapidchat_token");
+    localStorage.removeItem("rapidchat_user");
+    showAuth();
+  }
+})();

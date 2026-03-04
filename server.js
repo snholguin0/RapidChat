@@ -1,231 +1,220 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
-const mongoose = require('mongoose');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+require("dotenv").config();
+
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const http = require("http");
+const path = require("path");
+const mongoose = require("mongoose");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+
+const PORT = process.env.PORT || 3000;
+const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || `http://localhost:${PORT}`;
+const MONGODB_URI = process.env.MONGODB_URI;
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// If you later split frontend/backend domains, keep this.
+// For local same-origin it won’t hurt.
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", CLIENT_ORIGIN);
+  res.header("Access-Control-Allow-Headers", "Content-Type, x-session-token");
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
 const io = new Server(server, {
-    cors: {
-        origin: '*', // Allow all origins for development; replace '*' with frontend URL in production
-        methods: ['GET', 'POST'],
-    },
+  cors: { origin: CLIENT_ORIGIN, methods: ["GET", "POST"] }
 });
 
-app.use(bodyParser.json());
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-}));
+// ---------- Mongo Models ----------
+const userSchema = new mongoose.Schema(
+  {
+    username: { type: String, unique: true, required: true, trim: true },
+    passwordHash: { type: String, required: true }
+  },
+  { timestamps: true }
+);
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
+const sessionSchema = new mongoose.Schema(
+  {
+    token: { type: String, unique: true, required: true },
+    username: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now, expires: "7d" } // auto delete after 7 days
+  },
+  { timestamps: false }
+);
 
-// Default route
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+const User = mongoose.model("User", userSchema);
+const Session = mongoose.model("Session", sessionSchema);
+
+// ---------- Helpers ----------
+function makeToken() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+async function auth(req, res, next) {
+  const token = req.header("x-session-token");
+  if (!token) return res.status(401).json({ error: "Not authenticated" });
+
+  const session = await Session.findOne({ token });
+  if (!session) return res.status(401).json({ error: "Not authenticated" });
+
+  req.username = session.username;
+  next();
+}
+
+// ---------- Routes ----------
+app.post("/api/signup", async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: "Missing fields" });
+
+    const exists = await User.findOne({ username });
+    if (exists) return res.status(409).json({ error: "Username already exists" });
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    await User.create({ username, passwordHash });
+
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ error: "Signup failed" });
+  }
 });
 
-// MongoDB Connection
-mongoose.connect('mongodb://localhost:27017/chatApp', { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('Connected to MongoDB'))
-    .catch(err => console.error('MongoDB connection error:', err));
+app.post("/api/login", async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: "Missing fields" });
 
-// MongoDB Models
-const userSchema = new mongoose.Schema({
-    username: { type: String, unique: true, required: true },
-    password: { type: String, required: true },
-    friends: { type: [String], default: [] },
-    friendRequests: { type: [String], default: [] },
-});
-const User = mongoose.model('User', userSchema);
+    const user = await User.findOne({ username });
+    if (!user) return res.status(401).json({ error: "Invalid username or password" });
 
-const chatRoomSchema = new mongoose.Schema({
-    name: { type: String, unique: true, required: true },
-    members: { type: [String], default: [] },
-    messages: [{ sender: String, content: String, timestamp: Date }],
-});
-const ChatRoom = mongoose.model('ChatRoom', chatRoomSchema);
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: "Invalid username or password" });
 
-// API Routes
+    const token = makeToken();
+    await Session.create({ token, username });
 
-// Signup Route
-app.post('/signup', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Username and password are required' });
-        }
-        const newUser = new User({ username, password });
-        await newUser.save();
-        res.status(200).json({ message: 'Sign-up successful' });
-    } catch (error) {
-        res.status(400).json({ error: 'User already exists' });
-    }
+    return res.json({ ok: true, token, username });
+  } catch (err) {
+    return res.status(500).json({ error: "Login failed" });
+  }
 });
 
-// Login Route
-app.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        const user = await User.findOne({ username });
-        if (!user || user.password !== password) {
-            return res.status(400).json({ error: 'Invalid username or password' });
-        }
-        res.status(200).json({ message: 'Login successful' });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
+app.post("/api/logout", auth, async (req, res) => {
+  const token = req.header("x-session-token");
+  await Session.deleteOne({ token });
+  return res.json({ ok: true });
 });
 
-// Friend Requests
-app.get('/friend-requests/:username', async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.params.username });
-        if (!user) return res.status(404).json({ error: 'User not found' });
-        res.status(200).json({ friendRequests: user.friendRequests });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
+app.get("/api/me", auth, (req, res) => {
+  return res.json({ ok: true, username: req.username });
 });
 
-// Send Friend Request
-app.post('/send-friend-request', async (req, res) => {
-    const { username, friendUsername } = req.body;
+// ---------- Socket.io ----------
+const roomMembers = new Map(); // roomName -> Set(username)
 
-    try {
-        const friend = await User.findOne({ username: friendUsername });
-        if (!friend) return res.status(400).json({ error: 'User not found' });
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("unauthorized"));
 
-        if (friend.friendRequests.includes(username)) {
-            return res.status(400).json({ error: 'Friend request already sent' });
-        }
+    const session = await Session.findOne({ token });
+    if (!session) return next(new Error("unauthorized"));
 
-        friend.friendRequests.push(username);
-        await friend.save();
-        res.status(200).json({ message: 'Friend request sent successfully' });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
+    socket.username = session.username;
+    next();
+  } catch {
+    next(new Error("unauthorized"));
+  }
 });
 
-// Accept Friend Request
-app.post('/accept-friend-request', async (req, res) => {
-    const { username, friendUsername } = req.body;
-    try {
-        const user = await User.findOne({ username });
-        const friend = await User.findOne({ username: friendUsername });
-        if (!user || !friend) return res.status(400).json({ error: 'One or both users not found' });
+io.on("connection", (socket) => {
+  const username = socket.username;
 
-        const index = user.friendRequests.indexOf(friendUsername);
-        if (index === -1) return res.status(400).json({ error: 'Friend request not found' });
+  socket.on("joinRoom", ({ roomName }) => {
+    if (!roomName) return;
 
-        user.friends.push(friendUsername);
-        friend.friends.push(username);
-        user.friendRequests.splice(index, 1);
+    socket.join(roomName);
 
-        await user.save();
-        await friend.save();
-        res.status(200).json({ message: 'Friend request accepted' });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
+    if (!roomMembers.has(roomName)) roomMembers.set(roomName, new Set());
+    roomMembers.get(roomName).add(username);
 
-// Get Friends List
-app.get('/friends/:username', async (req, res) => {
-    try {
-        const user = await User.findOne({ username: req.params.username });
-        if (!user) return res.status(404).json({ error: 'User not found' });
-        res.status(200).json({ friends: user.friends });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-});
-
-// Create Chat Room
-app.post('/create-chat', async (req, res) => {
-    const { name, creator, members } = req.body;
-
-    if (!name || !creator) {
-        return res.status(400).json({ error: 'Room name and creator are required' });
-    }
-
-    try {
-        const existingRoom = await ChatRoom.findOne({ name });
-        if (existingRoom) {
-            return res.status(400).json({ error: 'Chat room already exists' });
-        }
-
-        const newChatRoom = new ChatRoom({
-            name,
-            members: [creator, ...(members || [])],
-            messages: [],
-        });
-
-        await newChatRoom.save();
-        res.status(200).json({ message: 'Chat room created successfully', chatRoom: newChatRoom });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to create chat room' });
-    }
-});
-
-// Get All Chat Rooms
-app.get('/chat-rooms', async (req, res) => {
-    try {
-        const chatRooms = await ChatRoom.find({});
-        res.status(200).json({ chatRooms });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch chat rooms' });
-    }
-});
-
-// Get Chat Room Messages
-app.get('/chat-rooms/:name/messages', async (req, res) => {
-    try {
-        const chatRoom = await ChatRoom.findOne({ name: req.params.name });
-        if (!chatRoom) {
-            return res.status(404).json({ error: 'Chat room not found' });
-        }
-        res.status(200).json({ messages: chatRoom.messages });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch messages' });
-    }
-});
-
-// WebSocket for Real-Time Messaging
-io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
-
-    socket.on('joinRoom', (roomName) => {
-        socket.join(roomName);
-        console.log(`User ${socket.id} joined room ${roomName}`);
+    io.to(roomName).emit("systemMessage", { roomName, text: `${username} joined`, ts: Date.now() });
+    io.to(roomName).emit("roomMembers", {
+      roomName,
+      members: Array.from(roomMembers.get(roomName))
     });
+  });
 
-    socket.on('sendMessage', async ({ roomName, sender, content }) => {
-        const message = { sender, content, timestamp: new Date() };
+  socket.on("leaveRoom", ({ roomName }) => {
+    if (!roomName) return;
 
-        // Save message to the database
-        const chatRoom = await ChatRoom.findOne({ name: roomName });
-        if (chatRoom) {
-            chatRoom.messages.push(message);
-            await chatRoom.save();
-        }
+    socket.leave(roomName);
 
-        // Broadcast message to the room
-        io.to(roomName).emit('newMessage', message);
+    const set = roomMembers.get(roomName);
+    if (set) {
+      set.delete(username);
+      if (set.size === 0) roomMembers.delete(roomName);
+    }
+
+    io.to(roomName).emit("systemMessage", { roomName, text: `${username} left`, ts: Date.now() });
+    io.to(roomName).emit("roomMembers", {
+      roomName,
+      members: roomMembers.get(roomName) ? Array.from(roomMembers.get(roomName)) : []
     });
+  });
 
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
+  socket.on("sendMessage", ({ roomName, text }) => {
+    if (!roomName || !text) return;
+    io.to(roomName).emit("chatMessage", {
+      roomName,
+      from: username,
+      text: String(text).slice(0, 2000),
+      ts: Date.now()
     });
+  });
+
+  socket.on("disconnecting", () => {
+    for (const roomName of socket.rooms) {
+      if (roomName === socket.id) continue;
+
+      const set = roomMembers.get(roomName);
+      if (!set) continue;
+
+      set.delete(username);
+      if (set.size === 0) roomMembers.delete(roomName);
+
+      io.to(roomName).emit("systemMessage", { roomName, text: `${username} disconnected`, ts: Date.now() });
+      io.to(roomName).emit("roomMembers", {
+        roomName,
+        members: roomMembers.get(roomName) ? Array.from(roomMembers.get(roomName)) : []
+      });
+    }
+  });
 });
 
-// Start Server
-const PORT = 3000;
-server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+// ---------- Start ----------
+(async () => {
+  if (!MONGODB_URI) {
+    console.log("Missing MONGODB_URI in .env");
+    process.exit(1);
+  }
 
+  try {
+    await mongoose.connect(MONGODB_URI);
+    console.log("MongoDB connected");
+
+    server.listen(PORT, () => {
+      console.log(`RapidChat running on http://localhost:${PORT}`);
+    });
+  } catch (err) {
+    console.error("Mongo connect failed:", err.message);
+    process.exit(1);
+  }
+})();
