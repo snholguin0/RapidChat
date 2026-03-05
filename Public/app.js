@@ -1,3 +1,4 @@
+const API_BASE = "https://rapidchat-4ijy.onrender.com";
 let token = localStorage.getItem("rapidchat_token") || "";
 let username = localStorage.getItem("rapidchat_user") || "";
 let socket = null;
@@ -78,14 +79,14 @@ async function api(path, opts = {}) {
   if (token) headers["x-session-token"] = token;
   if (opts.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(path, { ...opts, headers });
+  const res = await fetch(API_BASE + path, { ...opts, headers });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || "Request failed");
   return data;
 }
 
 function connectSocket() {
-  socket = io({ auth: { token } });
+  socket = io(API_BASE, { auth: { token } });
 
   socket.on("connect", () => setMsg(chatMsg, ""));
 
